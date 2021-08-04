@@ -1,17 +1,19 @@
 import gmsh
 
 class Mesh():
-    def __init__(self, name, dat_path, dr, br, dim, debug=False):
+    def __init__(self, name, dat_path, size_af, size_ff, dim, debug=False):
         gmsh.initialize()
         gmsh.model.add(name)
         # gmsh.option.setNumber("General.Terminal", 1)
         # gmsh.option.setNumber('General.AbortOnError', 2)
-        self.dr = dr
-        self.br = br
+        self.raf = size_af
+        self.rff = size_ff
         self.dim = dim
         self.name = name
         self.debug = debug
         self.dat_path = dat_path
+        self.ff_shape = 'circle'
+        self.ff_shape_ = {'box': self.__make_box, 'circle': self.__make_circle}
 
     def set_box_res(self, res):
         self.br = res
@@ -27,30 +29,48 @@ class Mesh():
     def _get_points(self, data):
         return [tuple(map(float, x.split())) for x in data.split('\n') if x!='']
 
+    def __make_box(self, geo, center, dim, res):
+        box = [
+            geo.addPoint(center[0]-dim[0]/2, center[1]-dim[1]/2, 0, res),
+            geo.addPoint(center[0]+dim[0]/2, center[1]-dim[1]/2, 0, res), 
+            geo.addPoint(center[0]+dim[0]/2, center[1]+dim[1]/2, 0, res),
+            geo.addPoint(center[0]-dim[0]/2, center[1]+dim[1]/2, 0, res)
+        ]
+        return [geo.addLine(p, box[(i+1)%4]) for i, p in enumerate(box)]
+
+    def __make_circle(self, geo, center, rad, res):
+        c = geo.addPoint(*center, 0)
+        circle = [
+            geo.addPoint(center[0], center[1]+rad, 0, res),
+            geo.addPoint(center[0]+rad, center[1], 0, res),
+            geo.addPoint(center[0], center[1]-rad, 0, res),
+            geo.addPoint(center[0]-rad, center[1], 0, res)
+        ]
+        return [geo.addCircleArc(p, c, circle[(i+1)%4]) for i, p in enumerate(circle)]
+
+
     def genPoints(self):
         tmp = gmsh.model.getCurrent()
         gmsh.model.setCurrent(self.name)
         geo = gmsh.model.geo
-        box = [
-            geo.addPoint(.5-self.dim[0]/2, 0-self.dim[1]/2, 0, self.br),
-            geo.addPoint(.5+self.dim[0]/2, 0-self.dim[1]/2, 0, self.br), 
-            geo.addPoint(.5+self.dim[0]/2, 0+self.dim[1]/2, 0, self.br),
-            geo.addPoint(.5-self.dim[0]/2, 0+self.dim[1]/2, 0, self.br)
-        ]
-        box = [geo.addLine(a, b) for a, b in zip(box, box[1:]+[box[0]])]
+        ff = self.ff_shape_[self.ff_shape](geo, [.5, 0], self.dim, self.rff)
         uppts, dwpts = self._read_dat(self.dat_path)
         p0, p1 = uppts[0], uppts[-1]
         p0, p1 = geo.addPoint(*p0, 0, self.dr), geo.addPoint(*p1, 0, self.dr)
         upspl = [geo.addPoint(x, y, 0, self.dr) for x, y in uppts[1:-1]]
         dwspl = [geo.addPoint(x, y, 0, self.dr) for x, y in dwpts[1:-1]]
-        spl = [
+        af = [
              geo.addSpline([p0]+dwspl+[p1]),
             -geo.addSpline([p0]+upspl+[p1])
         ]
-        bx = geo.addCurveLoop(box)
-        sp = geo.addCurveLoop(spl)
-        geo.addPlaneSurface([bx, sp])
+        ff = geo.addCurveLoop(ff)
+        af = geo.addCurveLoop(af)
+        geo.addPlaneSurface([ff, af])
         geo.synchronize()
+        farfield = geo.addPhysicalGroup(1, [ff])
+        airfoil = geo.addPhysicalGroup(1, [af])
+        gmsh.model.setPhysicalName(1, airfoil, 'airfoil')
+        gmsh.model.setPhysicalName(1, farfield, 'farfield')
         gmsh.model.mesh.generate(2)
         gmsh.model.setCurrent(tmp)
     
