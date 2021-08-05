@@ -48,7 +48,6 @@ class Mesh():
         ]
         return [geo.addCircleArc(p, c, circle[(i+1)%4]) for i, p in enumerate(circle)]
 
-
     def genPoints(self):
         tmp = gmsh.model.getCurrent()
         gmsh.model.setCurrent(self.name)
@@ -56,19 +55,19 @@ class Mesh():
         ff = self.ff_shape_[self.ff_shape](geo, [.5, 0], self.dim, self.rff)
         uppts, dwpts = self._read_dat(self.dat_path)
         p0, p1 = uppts[0], uppts[-1]
-        p0, p1 = geo.addPoint(*p0, 0, self.dr), geo.addPoint(*p1, 0, self.dr)
-        upspl = [geo.addPoint(x, y, 0, self.dr) for x, y in uppts[1:-1]]
-        dwspl = [geo.addPoint(x, y, 0, self.dr) for x, y in dwpts[1:-1]]
+        p0, p1 = geo.addPoint(*p0, 0, self.raf), geo.addPoint(*p1, 0, self.raf)
+        upspl = [geo.addPoint(x, y, 0, self.raf) for x, y in uppts[1:-1]]
+        dwspl = [geo.addPoint(x, y, 0, self.raf) for x, y in dwpts[1:-1]]
         af = [
              geo.addSpline([p0]+dwspl+[p1]),
             -geo.addSpline([p0]+upspl+[p1])
         ]
-        ff = geo.addCurveLoop(ff)
-        af = geo.addCurveLoop(af)
+        ff = geo.addCurveLoop(ff,1)
+        af = geo.addCurveLoop(af,2)
         geo.addPlaneSurface([ff, af])
         geo.synchronize()
-        farfield = geo.addPhysicalGroup(1, [ff])
-        airfoil = geo.addPhysicalGroup(1, [af])
+        farfield = gmsh.model.addPhysicalGroup(1, [ff])
+        airfoil = gmsh.model.addPhysicalGroup(1, [af])
         gmsh.model.setPhysicalName(1, airfoil, 'airfoil')
         gmsh.model.setPhysicalName(1, farfield, 'farfield')
         gmsh.model.mesh.generate(2)
